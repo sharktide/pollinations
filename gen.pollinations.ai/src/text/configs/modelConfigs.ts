@@ -32,26 +32,35 @@ function createVertexGeminiConfig(
     });
 }
 
+// Status codes that make Airforce hand off to the fallback target: out of
+// balance (402), key/quota problems (401/403/404/429), server errors (5xx), and
+// requests Airforce can't serve (400/422) — e.g. Gemini built-in tools like
+// {type:"code_execution"}, which 400 on Airforce and fall through to Vertex.
+// Failed Airforce attempts aren't billed, so falling back is always safe.
+const AIRFORCE_FALLBACK_STATUS_CODES = [
+    400, 401, 402, 403, 404, 422, 429, 500, 502, 503,
+];
+
 /**
- * Routes a Gemini model to Airforce, falling back to Vertex on failure.
- * Same modelId on both targets → identical billing regardless of route.
- * on_status_codes covers Airforce being out of balance (402), key/quota
- * problems (401/403/404/429), server errors (5xx), and requests Airforce can't
- * serve (400/422) — notably Gemini built-in tools like {type:"code_execution"},
- * which 400 on Airforce and fall through to Vertex where they actually run.
- * Failed attempts aren't billed, so falling back is always safe.
- * The top-level `model` keeps resolveModelConfig from sending model:undefined.
+ * Routes a model to Airforce (cheaper resale), falling back to its original
+ * provider on failure. Same model on both targets → identical billing
+ * regardless of route. `fallbackTarget` is the provider-native Portkey target
+ * (Vertex, Bedrock, …). The top-level `model` keeps resolveModelConfig from
+ * sending model:undefined; `defaultOptions` (e.g. max_tokens) apply request-wide
+ * to whichever target serves.
  */
-function createAirforceGeminiFallbackConfig(
+function createAirforceFallbackConfig(
     airforceModelId: string,
-    vertexModelId: string,
-    vertexRegion: string,
+    topLevelModel: string,
+    fallbackTarget: Record<string, unknown>,
+    defaultOptions?: Record<string, unknown>,
 ): PortkeyConfigFactory {
     return () => ({
-        model: vertexModelId,
+        model: topLevelModel,
+        ...(defaultOptions ? { defaultOptions } : {}),
         strategy: {
             mode: "fallback",
-            on_status_codes: [400, 401, 402, 403, 404, 422, 429, 500, 502, 503],
+            on_status_codes: AIRFORCE_FALLBACK_STATUS_CODES,
         },
         targets: [
             {
@@ -60,15 +69,44 @@ function createAirforceGeminiFallbackConfig(
                 authKey: process.env.AIRFORCE_API_KEY,
                 override_params: { model: airforceModelId },
             },
-            {
-                provider: "vertex-ai",
-                authKey: googleCloudAuth.getAccessToken,
-                vertex_project_id: process.env.GOOGLE_PROJECT_ID,
-                vertex_region: vertexRegion,
-                override_params: { model: vertexModelId },
-            },
+            fallbackTarget,
         ],
     });
+}
+
+/** Vertex AI fallback target for the Airforce route. */
+function createAirforceGeminiFallbackConfig(
+    airforceModelId: string,
+    vertexModelId: string,
+    vertexRegion: string,
+): PortkeyConfigFactory {
+    return createAirforceFallbackConfig(airforceModelId, vertexModelId, {
+        provider: "vertex-ai",
+        authKey: googleCloudAuth.getAccessToken,
+        vertex_project_id: process.env.GOOGLE_PROJECT_ID,
+        vertex_region: vertexRegion,
+        override_params: { model: vertexModelId },
+    });
+}
+
+/** Bedrock (Claude) fallback target for the Airforce route. */
+function createAirforceClaudeFallbackConfig(
+    airforceModelId: string,
+    bedrockModelId: string,
+    maxTokens: number,
+): PortkeyConfigFactory {
+    return createAirforceFallbackConfig(
+        airforceModelId,
+        bedrockModelId,
+        {
+            provider: "bedrock",
+            aws_access_key_id: process.env.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key: process.env.AWS_SECRET_ACCESS_KEY,
+            aws_region: process.env.AWS_REGION || "us-east-1",
+            override_params: { model: bedrockModelId },
+        },
+        { max_tokens: maxTokens },
+    );
 }
 
 // =============================================================================
@@ -224,6 +262,34 @@ export const portkeyConfig: PortkeyConfigMap = {
             model: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
             defaultOptions: { max_tokens: 64000 },
         }),
+
+    // Airforce primary, Bedrock fallback — same Claude SKU (~50% cheaper on
+    // Airforce), same registry modelId so billing is unchanged either route.
+    "claude-haiku-4-5-airforce": createAirforceClaudeFallbackConfig(
+        "claude-haiku-4.5",
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        64000,
+    ),
+    "claude-sonnet-4-6-airforce": createAirforceClaudeFallbackConfig(
+        "claude-sonnet-4.6",
+        "global.anthropic.claude-sonnet-4-6",
+        64000,
+    ),
+    "claude-opus-4-6-airforce": createAirforceClaudeFallbackConfig(
+        "claude-opus-4.6",
+        "global.anthropic.claude-opus-4-6-v1",
+        128000,
+    ),
+    "claude-opus-4-7-airforce": createAirforceClaudeFallbackConfig(
+        "claude-opus-4.7",
+        "global.anthropic.claude-opus-4-7",
+        128000,
+    ),
+    "claude-opus-4-8-airforce": createAirforceClaudeFallbackConfig(
+        "claude-opus-4.8",
+        "global.anthropic.claude-opus-4-8",
+        128000,
+    ),
 
     // -- AWS Bedrock (Nova) ---------------------------------------------------
     "nova-micro": () =>

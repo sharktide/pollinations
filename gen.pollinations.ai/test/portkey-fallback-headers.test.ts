@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { portkeyConfig } from "@/text/configs/modelConfigs.ts";
 import { generatePortkeyHeaders } from "@/text/portkeyUtils.ts";
 
 describe("generatePortkeyHeaders — fallback config", () => {
@@ -58,6 +59,52 @@ describe("generatePortkeyHeaders — fallback config", () => {
             vertex_project_id: "proj",
         });
         expect(payload.targets[1].authKey).toBeUndefined();
+    });
+
+    it("builds Airforce→Bedrock fallback for Claude with correct targets", async () => {
+        const config = portkeyConfig["claude-sonnet-4-6-airforce"]();
+
+        // Top-level model + defaultOptions apply request-wide to either target.
+        expect(config.model).toBe("global.anthropic.claude-sonnet-4-6");
+        expect(
+            (config.defaultOptions as { max_tokens: number }).max_tokens,
+        ).toBe(64000);
+
+        const headers = await generatePortkeyHeaders(config);
+        const payload = JSON.parse(headers["x-portkey-config"]);
+
+        // Primary = Airforce (cheaper resale of the same SKU).
+        expect(payload.targets[0]).toMatchObject({
+            provider: "openai",
+            custom_host: "https://api.airforce/v1",
+            override_params: { model: "claude-sonnet-4.6" },
+        });
+
+        // Fallback = first-party Bedrock; AWS creds pass through (no authKey).
+        expect(payload.targets[1]).toMatchObject({
+            provider: "bedrock",
+            override_params: { model: "global.anthropic.claude-sonnet-4-6" },
+        });
+        expect(payload.targets[1].aws_region).toBeDefined();
+
+        expect(payload.strategy.mode).toBe("fallback");
+        // Must fall back on Airforce out-of-balance (402).
+        expect(payload.strategy.on_status_codes).toContain(402);
+    });
+
+    it("keeps the Gemini route on a Vertex fallback target", async () => {
+        const config = portkeyConfig["gemini-3-flash-airforce"]();
+        expect(config.model).toBe("gemini-3-flash-preview");
+
+        const headers = await generatePortkeyHeaders(config);
+        const payload = JSON.parse(headers["x-portkey-config"]);
+        expect(payload.targets[0].override_params).toEqual({
+            model: "gemini-3-flash",
+        });
+        expect(payload.targets[1].provider).toBe("vertex-ai");
+        expect(payload.targets[1].override_params).toEqual({
+            model: "gemini-3-flash-preview",
+        });
     });
 
     it("still flattens a normal single-provider config into x-portkey-* headers", async () => {

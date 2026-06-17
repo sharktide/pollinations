@@ -119,23 +119,23 @@ const models: ModelDefinition[] = [
     },
     {
         name: "claude-fast",
-        config: portkeyConfig["claude-haiku-4-5"],
+        config: portkeyConfig["claude-haiku-4-5-airforce"],
     },
     {
         name: "claude",
-        config: portkeyConfig["claude-sonnet-4-6"],
+        config: portkeyConfig["claude-sonnet-4-6-airforce"],
     },
     {
         name: "claude-large",
-        config: portkeyConfig["claude-opus-4-6"],
+        config: portkeyConfig["claude-opus-4-6-airforce"],
     },
     {
         name: "claude-opus-4.7",
-        config: portkeyConfig["claude-opus-4-7"],
+        config: portkeyConfig["claude-opus-4-7-airforce"],
     },
     {
         name: "claude-opus-4.8",
-        config: portkeyConfig["claude-opus-4-8"],
+        config: portkeyConfig["claude-opus-4-8-airforce"],
     },
     {
         name: "gemini",
