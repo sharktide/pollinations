@@ -1401,19 +1401,15 @@ async function createRealtimeBillingContext(
         );
     }
 
-    // Resolve effective pollen type with precedence:
-    // 1. paidOnly models always use pack (ignore everything else)
-    // 2. Per-model override from permissions.models
-    // 3. Key-level pollenType restriction
     const isPaidOnly = modelInfo.definition.paidOnly ?? false;
     const keyPollenType = c.var.auth.apiKey?.pollenType ?? null;
-    const effectivePollenType = isPaidOnly
-        ? null
-        : resolveModelPollenType(
-              c.var.auth.apiKey?.permissions,
-              modelInfo.resolved,
-              keyPollenType,
-          );
+    const effectivePollenType = resolveModelPollenType(
+        c.var.auth.apiKey?.permissions,
+        modelInfo.resolved,
+        keyPollenType,
+        isPaidOnly,
+        c.var.auth.apiKey?.questPollenOnly ?? false,
+    );
 
     return {
         // requireUser() above proves the id, which the optional field cannot.

@@ -48,6 +48,8 @@ function KeysPage() {
             permissions: {
                 allowedModels: formState.allowedModels,
                 pollenBudget: formState.pollenBudget,
+                pollenType: formState.pollenType,
+                questPollenOnly: formState.questPollenOnly,
                 accountPermissions: formState.accountPermissions?.length
                     ? formState.accountPermissions
                     : undefined,
@@ -77,6 +79,7 @@ function KeysPage() {
             json: {
                 ...updates,
                 allowedModels: updates.allowedModels ?? null,
+                questPollenOnly: updates.questPollenOnly ?? undefined,
                 expiresAt:
                     updates.expiresAt instanceof Date
                         ? updates.expiresAt.toISOString()

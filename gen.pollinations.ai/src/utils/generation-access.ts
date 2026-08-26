@@ -35,14 +35,13 @@ export async function checkBalance(
 
     const isPaidOnly = model.definition.paidOnly ?? false;
     const keyPollenType = auth.apiKey?.pollenType ?? null;
-    // Resolve effective pollen type: per-model override > key-level restriction
-    const effectivePollenType = isPaidOnly
-        ? null // paidOnly models always use pack, ignore pollen type
-        : resolveModelPollenType(
-              auth.apiKey?.permissions,
-              model.resolved,
-              keyPollenType,
-          );
+    const effectivePollenType = resolveModelPollenType(
+        auth.apiKey?.permissions,
+        model.resolved,
+        keyPollenType,
+        isPaidOnly,
+        auth.apiKey?.questPollenOnly ?? false,
+    );
     const estimatedCost = withByopMarkup(
         getEstimatedPrice(
             await getModelStats(env.KV, log),
