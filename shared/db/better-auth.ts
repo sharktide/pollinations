@@ -148,6 +148,7 @@ export const apikey = sqliteTable("apikey", {
   permissions: text("permissions"),
   metadata: text("metadata"),
   pollenBalance: real("pollen_balance"),
+  pollenType: text("pollen_type"),
   byopClientKeyId: text("byop_client_key_id"),
 }, (table) => [
   index("idx_apikey_key").on(table.key),
@@ -229,6 +230,14 @@ export const communityEndpoint = sqliteTable("community_endpoint", {
   visibility: text("visibility", { enum: ["private", "public"] })
     .default("private")
     .notNull(),
+  // A public price change or private-to-public transition becomes effective
+  // 12 hours after it is submitted. The pending payload is only meaningful
+  // for proxy listings; visibility applies to every listing type.
+  pendingPayload: text("pending_payload"),
+  pendingVisibility: text("pending_visibility", {
+    enum: ["private", "public"],
+  }),
+  pendingAt: integer("pending_at", { mode: "timestamp" }),
   hiddenAt: integer("hidden_at", { mode: "timestamp" }),
   hiddenReason: text("hidden_reason"),
   hiddenBy: text("hidden_by"),

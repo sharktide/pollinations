@@ -134,6 +134,18 @@ const ProxyCreateSchema = z
 export const CreateEndpointSchema = ProxyCreateSchema;
 export type ProxyCreateInput = z.infer<typeof ProxyCreateSchema>;
 
+export const CreateEndpointAgentSchema = z
+    .object({
+        name: EndpointFieldsSchema.name,
+        title: EndpointFieldsSchema.title,
+        description: EndpointFieldsSchema.description,
+        visibility: VisibilitySchema.optional().default("private"),
+        baseUrl: EndpointFieldsSchema.baseUrl,
+        upstreamModel: EndpointFieldsSchema.upstreamModel,
+        perUserRpm: PerUserRpmSchema.optional().default(null),
+    })
+    .strict();
+
 const CommonUpdateFieldsSchema = {
     name: EndpointFieldsSchema.name.optional(),
     title: EndpointFieldsSchema.title.optional(),
@@ -203,6 +215,21 @@ export const TestEndpointSchema = z
 const ResponsePriceFieldsSchema = Object.fromEntries(
     COMMUNITY_ENDPOINT_PRICE_FIELDS.map((field) => [field.key, z.number()]),
 ) as unknown as Record<CommunityEndpointPriceKey, z.ZodType<number>>;
+const PendingCommunityEndpointChangeSchema = z
+    .object({
+        effectiveAt: z.string().datetime(),
+        visibility: z.literal("public").optional(),
+        paidOnly: z.boolean().optional(),
+        imagePricing: ImagePricingSchema.optional(),
+        ...Object.fromEntries(
+            COMMUNITY_ENDPOINT_PRICE_FIELDS.map((field) => [
+                field.key,
+                z.number().optional(),
+            ]),
+        ),
+    })
+    .strict()
+    .nullable();
 const CommunityEndpointResponseFieldsSchema = {
     id: z.string(),
     modelId: z.string(),
@@ -212,6 +239,7 @@ const CommunityEndpointResponseFieldsSchema = {
     baseUrl: z.string().url(),
     upstreamModel: z.string().min(1),
     visibility: VisibilitySchema,
+    pending: PendingCommunityEndpointChangeSchema,
     hidden: z.boolean(),
     hiddenReason: z.string().nullable(),
     hiddenAt: z.string().nullable(),
@@ -238,7 +266,7 @@ const PromptAgentEndpointResponseSchema = z
         type: z.literal("prompt_agent"),
     })
     .strict();
-const EndpointAgentEndpointResponseSchema = z
+export const EndpointAgentResponseSchema = z
     .object({
         ...CommunityEndpointResponseFieldsSchema,
         type: z.literal("endpoint_agent"),
@@ -248,7 +276,7 @@ const EndpointAgentEndpointResponseSchema = z
 export const CommunityEndpointResponseSchema = z.discriminatedUnion("type", [
     ProxyEndpointResponseSchema,
     PromptAgentEndpointResponseSchema,
-    EndpointAgentEndpointResponseSchema,
+    EndpointAgentResponseSchema,
 ]);
 export type CommunityEndpointResponse = z.infer<
     typeof CommunityEndpointResponseSchema

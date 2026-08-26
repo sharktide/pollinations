@@ -321,7 +321,7 @@ describe("BYOP markup", () => {
         });
     });
 
-    it("allows a zero-cost model when every balance is zero", async () => {
+    it("requires a positive balance even when the model estimate is zero", async () => {
         const vars = {
             auth: {
                 user: { id: "preflight-payer" },
@@ -337,12 +337,53 @@ describe("BYOP markup", () => {
             log: fakeLog(),
         } as unknown as Parameters<typeof checkBalance>[0];
 
-        await checkBalance(vars, fakeStatsEnv(0));
+        await expect(checkBalance(vars, fakeStatsEnv(0))).rejects.toMatchObject(
+            {
+                status: 402,
+            },
+        );
+    });
 
-        expect(vars.balance.balanceCheckResult?.balances).toEqual({
-            "v1:meter:tier": 0,
-            "v1:meter:pack": 0,
-        });
+    it("rejects every model when the wallet is in debt with no positive balance", async () => {
+        const vars = {
+            auth: {
+                user: { id: "preflight-payer" },
+                apiKey: { id: "sk-test", pollenBalance: 0 },
+            },
+            balance: {
+                getBalance: async () => ({
+                    tierBalance: -1,
+                    packBalance: 0,
+                }),
+            },
+            model: testModel(),
+            log: fakeLog(),
+        } as unknown as Parameters<typeof checkBalance>[0];
+
+        await expect(checkBalance(vars, fakeStatsEnv(0))).rejects.toMatchObject(
+            {
+                status: 402,
+            },
+        );
+    });
+
+    it("allows a positive bucket to cover a debt in the other bucket", async () => {
+        const vars = {
+            auth: {
+                user: { id: "preflight-payer" },
+                apiKey: { id: "sk-test", pollenBalance: 2 },
+            },
+            balance: {
+                getBalance: async () => ({
+                    tierBalance: -1,
+                    packBalance: 2,
+                }),
+            },
+            model: testModel(),
+            log: fakeLog(),
+        } as unknown as Parameters<typeof checkBalance>[0];
+
+        await checkBalance(vars, fakeStatsEnv(1));
     });
 
     it("requires paid-only preflight to have pack balance above the model estimate", async () => {
@@ -788,6 +829,59 @@ describe("BYOP markup", () => {
             MARKUP_PCT,
             10,
         );
+        expect((await getUserBalance(db, ownerId)).tierBalance).toBeCloseTo(
+            COMMUNITY_MODEL_REWARD_RATE,
+            10,
+        );
+    });
+
+    it("suppresses generation credits when the payer goes negative", async () => {
+        const { payerId, devId, pkId } = await setupPayerAndDev();
+        const ownerId = await createBalanceUser("community-owner");
+
+        const { markup, communityModelReward, billedPrice } =
+            await handleBalanceDeduction({
+                db,
+                isBilledUsage: true,
+                totalPrice: 2,
+                userId: payerId,
+                byopClientKeyId: pkId,
+                communityModelReward: {
+                    userId: ownerId,
+                    rewardRate: COMMUNITY_MODEL_REWARD_RATE,
+                },
+            });
+
+        expect(billedPrice).toBe(
+            roundPollenLedgerAmount(2 + computeDevCredit(2)),
+        );
+        expect(markup).toBeNull();
+        expect(communityModelReward).toBeNull();
+        expect((await getUserBalance(db, payerId)).tierBalance).toBeLessThan(0);
+        expect((await getUserBalance(db, devId)).tierBalance).toBe(0);
+        expect((await getUserBalance(db, ownerId)).tierBalance).toBe(0);
+    });
+
+    it("still credits a community owner when the payer reaches zero", async () => {
+        const payerId = await createBalanceUser("payer", {
+            tier: 1,
+            pack: 0,
+        });
+        const ownerId = await createBalanceUser("community-owner");
+
+        const { communityModelReward } = await handleBalanceDeduction({
+            db,
+            isBilledUsage: true,
+            totalPrice: 1,
+            userId: payerId,
+            communityModelReward: {
+                userId: ownerId,
+                rewardRate: COMMUNITY_MODEL_REWARD_RATE,
+            },
+        });
+
+        expect(communityModelReward).not.toBeNull();
+        expect((await getUserBalance(db, payerId)).tierBalance).toBe(0);
         expect((await getUserBalance(db, ownerId)).tierBalance).toBeCloseTo(
             COMMUNITY_MODEL_REWARD_RATE,
             10,
